@@ -48,6 +48,24 @@ class Neg:
         return -grad
 
 
+class LeakyReLU:
+    def __init__(self, negative_slope=0.01):
+        self.a = None
+        self.negative_slope = negative_slope
+
+    def forward(self, a: "Tensor") -> "Tensor":
+        self.a = a
+        data = np.where(a.data > 0, a.data, self.negative_slope * a.data)
+        ret = Tensor(data)
+        ret.src = self
+        return ret
+
+    def backward(self, grad: np.ndarray) -> np.ndarray:
+        assert self.a is not None
+        mask = np.where(self.a.data > 0, 1.0, self.negative_slope)
+        return grad * mask
+
+
 class MatMul:
     def __init__(self):
         self.a, self.b = None, None
@@ -67,7 +85,7 @@ class MatMul:
 
 
 BINARY_OP = Add | Mul | MatMul
-UNARY_OP = Neg
+UNARY_OP = Neg | LeakyReLU
 
 
 class Tensor:
@@ -90,6 +108,9 @@ class Tensor:
 
     def __matmul__(self, other: "Tensor"):
         return MatMul().forward(self, other)
+
+    def lrelu(self, negative_slope=0.01):
+        return LeakyReLU(negative_slope).forward(self)
 
     def backward(self):
         if self.grad is None:
