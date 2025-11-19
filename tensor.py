@@ -94,6 +94,14 @@ class Tensor:
         self.grad: np.ndarray | None = None
         self.src: BINARY_OP | UNARY_OP | None = None
 
+    @classmethod
+    def randn(cls, *shape, scale=1.0) -> "Tensor":
+        return cls(np.random.randn(*shape) * scale)
+
+    @classmethod
+    def zeros(cls, *shape) -> "Tensor":
+        return cls(np.zeros(*shape))
+
     def __add__(self, other: "Tensor"):
         return Add().forward(self, other)
 
