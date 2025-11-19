@@ -135,3 +135,59 @@ class Tensor:
                     grad_a if self.src.a.grad is None else self.src.a.grad + grad_a
                 )
                 self.src.a.backward()
+
+
+def test_tensor_addition():
+    a = Tensor([1.0, 2.0, 3.0])
+    b = Tensor([4.0, 5.0, 6.0])
+    c = a + b
+    expected = np.array([5.0, 7.0, 9.0])
+    assert np.allclose(c.data, expected)
+
+
+def test_tensor_multiplication():
+    a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+    b = Tensor([[2.0, 0.0], [1.0, 2.0]])
+    c = a * b
+    expected = np.array([[2.0, 0.0], [3.0, 8.0]])
+    assert np.allclose(c.data, expected)
+
+
+def test_leaky_relu_forward():
+    x = Tensor([[-1.0, 0.5], [-2.0, 1.0]])
+    y = x.lrelu()
+    expected = np.array([[-0.01, 0.5], [-0.02, 1.0]])
+    assert np.allclose(y.data, expected)
+
+
+def test_leaky_relu_gradients():
+    x = Tensor([[-1.0, 0.5], [-2.0, 1.0]])
+    y = x.lrelu()
+    y.backward()
+    expected_grad = np.array([[0.01, 1.0], [0.01, 1.0]])
+    assert np.allclose(x.grad, expected_grad)
+
+
+def test_matrix_multiplication():
+    A = Tensor([[1.0, 2.0], [3.0, 4.0]])
+    B = Tensor([[5.0, 6.0], [7.0, 8.0]])
+    C = A @ B
+    expected = np.array([[19.0, 22.0], [43.0, 50.0]])
+    assert np.allclose(C.data, expected)
+
+
+def test_complex_computation():
+    a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+    b = Tensor([[0.5, 1.0], [1.5, 2.0]])
+    c = Tensor([[2.0, 0.0], [0.0, 2.0]])
+    sum_ab = a + b
+    result = sum_ab * c
+    expected = np.array([[3.0, 0.0], [0.0, 12.0]])
+    assert np.allclose(result.data, expected)
+    result.backward()
+    expected_grad_a = np.array([[2.0, 0.0], [0.0, 2.0]])
+    expected_grad_b = np.array([[2.0, 0.0], [0.0, 2.0]])
+    expected_grad_c = np.array([[1.5, 3.0], [4.5, 6.0]])
+    assert np.allclose(a.grad, expected_grad_a)
+    assert np.allclose(b.grad, expected_grad_b)
+    assert np.allclose(c.grad, expected_grad_c)
