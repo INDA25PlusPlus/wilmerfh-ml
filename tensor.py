@@ -8,8 +8,10 @@ class Add:
     def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":
         self.a, self.b = a, b
         data = a.data + b.data
-        ret = Tensor(data)
-        ret.src = self
+        requires_grad = a.requires_grad or b.requires_grad
+        ret = Tensor(data, requires_grad=requires_grad)
+        if requires_grad:
+            ret.src = self
         return ret
 
     def backward(self, grad: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -23,8 +25,10 @@ class Mul:
     def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":
         self.a, self.b = a, b
         data = a.data * b.data
-        ret = Tensor(data)
-        ret.src = self
+        requires_grad = a.requires_grad or b.requires_grad
+        ret = Tensor(data, requires_grad=requires_grad)
+        if requires_grad:
+            ret.src = self
         return ret
 
     def backward(self, grad: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -39,8 +43,9 @@ class Neg:
     def forward(self, a: "Tensor") -> "Tensor":
         self.a = a
         data = -a.data
-        ret = Tensor(data)
-        ret.src = self
+        ret = Tensor(data, requires_grad=a.requires_grad)
+        if a.requires_grad:
+            ret.src = self
         return ret
 
     def backward(self, grad: np.ndarray) -> np.ndarray:
@@ -56,8 +61,9 @@ class LeakyReLU:
     def forward(self, a: "Tensor") -> "Tensor":
         self.a = a
         data = np.where(a.data > 0, a.data, self.negative_slope * a.data)
-        ret = Tensor(data)
-        ret.src = self
+        ret = Tensor(data, requires_grad=a.requires_grad)
+        if a.requires_grad:
+            ret.src = self
         return ret
 
     def backward(self, grad: np.ndarray) -> np.ndarray:
@@ -73,8 +79,10 @@ class MatMul:
     def forward(self, a: "Tensor", b: "Tensor") -> "Tensor":
         self.a, self.b = a, b
         data = a.data @ b.data
-        ret = Tensor(data)
-        ret.src = self
+        requires_grad = a.requires_grad or b.requires_grad
+        ret = Tensor(data, requires_grad=requires_grad)
+        if requires_grad:
+            ret.src = self
         return ret
 
     def backward(self, grad: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -89,18 +97,19 @@ UNARY_OP = Neg | LeakyReLU
 
 
 class Tensor:
-    def __init__(self, data):
+    def __init__(self, data, requires_grad=False):
         self.data = np.array(data)
         self.grad: np.ndarray | None = None
         self.src: BINARY_OP | UNARY_OP | None = None
+        self.requires_grad = requires_grad
 
     @classmethod
-    def randn(cls, *shape, scale=1.0) -> "Tensor":
-        return cls(np.random.randn(*shape) * scale)
+    def randn(cls, *shape, scale=1.0, requires_grad=False) -> "Tensor":
+        return cls(np.random.randn(*shape) * scale, requires_grad=requires_grad)
 
     @classmethod
-    def zeros(cls, *shape) -> "Tensor":
-        return cls(np.zeros(*shape))
+    def zeros(cls, *shape, requires_grad=False) -> "Tensor":
+        return cls(np.zeros(*shape), requires_grad=requires_grad)
 
     def __add__(self, other: "Tensor"):
         return Add().forward(self, other)
@@ -121,6 +130,9 @@ class Tensor:
         return LeakyReLU(negative_slope).forward(self)
 
     def backward(self):
+        if not self.requires_grad:
+            return
+
         if self.grad is None:
             self.grad = np.ones_like(self.data)
 
@@ -128,21 +140,24 @@ class Tensor:
             if isinstance(self.src, BINARY_OP):
                 assert self.src.a is not None and self.src.b is not None
                 grad_a, grad_b = self.src.backward(self.grad)
-                self.src.a.grad = (
-                    grad_a if self.src.a.grad is None else self.src.a.grad + grad_a
-                )
-                self.src.b.grad = (
-                    grad_b if self.src.b.grad is None else self.src.b.grad + grad_b
-                )
-                self.src.a.backward()
-                self.src.b.backward()
+                if self.src.a.requires_grad:
+                    self.src.a.grad = (
+                        grad_a if self.src.a.grad is None else self.src.a.grad + grad_a
+                    )
+                    self.src.a.backward()
+                if self.src.b.requires_grad:
+                    self.src.b.grad = (
+                        grad_b if self.src.b.grad is None else self.src.b.grad + grad_b
+                    )
+                    self.src.b.backward()
             elif isinstance(self.src, UNARY_OP):
                 assert self.src.a is not None
                 grad_a = self.src.backward(self.grad)
-                self.src.a.grad = (
-                    grad_a if self.src.a.grad is None else self.src.a.grad + grad_a
-                )
-                self.src.a.backward()
+                if self.src.a.requires_grad:
+                    self.src.a.grad = (
+                        grad_a if self.src.a.grad is None else self.src.a.grad + grad_a
+                    )
+                    self.src.a.backward()
 
 
 def test_tensor_addition():
@@ -169,7 +184,7 @@ def test_leaky_relu_forward():
 
 
 def test_leaky_relu_gradients():
-    x = Tensor([[-1.0, 0.5], [-2.0, 1.0]])
+    x = Tensor([[-1.0, 0.5], [-2.0, 1.0]], requires_grad=True)
     y = x.lrelu()
     y.backward()
     expected_grad = np.array([[0.01, 1.0], [0.01, 1.0]])
@@ -185,9 +200,9 @@ def test_matrix_multiplication():
 
 
 def test_complex_computation():
-    a = Tensor([[1.0, 2.0], [3.0, 4.0]])
-    b = Tensor([[0.5, 1.0], [1.5, 2.0]])
-    c = Tensor([[2.0, 0.0], [0.0, 2.0]])
+    a = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+    b = Tensor([[0.5, 1.0], [1.5, 2.0]], requires_grad=True)
+    c = Tensor([[2.0, 0.0], [0.0, 2.0]], requires_grad=True)
     sum_ab = a + b
     result = sum_ab * c
     expected = np.array([[3.0, 0.0], [0.0, 12.0]])
@@ -199,3 +214,14 @@ def test_complex_computation():
     assert np.allclose(a.grad, expected_grad_a)
     assert np.allclose(b.grad, expected_grad_b)
     assert np.allclose(c.grad, expected_grad_c)
+
+
+def test_requires_grad_inheritance():
+    a = Tensor([1.0], requires_grad=True)
+    b = Tensor([2.0], requires_grad=False)
+    c = a + b
+    assert c.requires_grad == True
+    assert c.src is not None
+    c.backward()
+    assert a.grad is not None
+    assert b.grad is None
