@@ -11,9 +11,7 @@ def mse_loss(prediction: Tensor, target: Tensor) -> Tensor:
 
     diff = prediction - target
     squared = diff**2.0
-    sum_squared = squared.sum()
-    n = Tensor(prediction.data.size)
-    loss = sum_squared / n
+    loss = squared.mean()
 
     return loss
 
@@ -30,11 +28,9 @@ def cross_entropy_loss(prediction: Tensor, target: Tensor) -> Tensor:
         f"{prediction.data.shape} vs {target.data.shape}"
     )
 
-    batch_size = prediction.data.shape[0]
     log_softmax_output = prediction.log_softmax(axis=-1)
     selected_log_probs = log_softmax_output * target
-    summed_log_probs = selected_log_probs.sum()
-    loss = -summed_log_probs / Tensor(batch_size)
+    loss = -selected_log_probs.sum(axis=1).mean()
 
     return loss
 

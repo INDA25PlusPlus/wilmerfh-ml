@@ -342,6 +342,13 @@ class Tensor:
     def sum(self, axis=None):
         return Sum(axis=axis).forward(self)
 
+    def mean(self, axis=None):
+        val = self.sum(axis=axis)
+        num_elements = (
+            self.data.size if axis is None else self.data.shape[axis]
+        )
+        return val / Tensor(np.full(val.data.shape, num_elements))
+
     def div(self, other: "Tensor"):
         return Div().forward(self, other)
 
@@ -708,3 +715,35 @@ def test_log_backward():
     expected.sum().backward()
 
     assert np.allclose(a.grad, a_torch.grad.numpy())
+
+
+def test_mean_forward():
+    a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+    result = a.mean()
+    a_torch = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    expected = torch.mean(a_torch)
+    assert np.allclose(result.data, expected.numpy())
+
+    result_axis = a.mean(axis=0)
+    expected_axis = torch.mean(a_torch, dim=0)
+    assert np.allclose(result_axis.data, expected_axis.numpy())
+
+
+def test_mean_backward():
+    a = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+    result = a.mean()
+    result.backward()
+
+    a_torch = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+    expected = a_torch.mean()
+    expected.backward()
+    assert np.allclose(a.grad, a_torch.grad.numpy())
+
+    a_axis = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+    result_axis = a_axis.mean(axis=0)
+    result_axis.sum().backward()
+
+    a_axis_torch = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+    expected_axis = a_axis_torch.mean(dim=0)
+    expected_axis.sum().backward()
+    assert np.allclose(a_axis.grad, a_axis_torch.grad.numpy())
