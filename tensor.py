@@ -170,6 +170,35 @@ class Sum:
         return np.broadcast_to(grad_expanded, self.a.data.shape)
 
 
+class Broadcast:
+    def __init__(self, target_shape):
+        self.a = None
+        self.target_shape = target_shape
+        self.original_shape = None
+
+    def forward(self, a: "Tensor") -> "Tensor":
+        self.a = a
+        self.original_shape = a.data.shape
+        data = np.broadcast_to(a.data, self.target_shape)
+        ret = Tensor(data, requires_grad=a.requires_grad)
+        if a.requires_grad:
+            ret.src = self
+        return ret
+
+    def backward(self, grad: np.ndarray) -> np.ndarray:
+        assert self.a is not None
+        result = grad
+        ndim_diff = grad.ndim - len(self.original_shape)
+        for _ in range(ndim_diff):
+            result = np.sum(result, axis=0)
+
+        for i, (orig_dim, grad_dim) in enumerate(zip(self.original_shape, result.shape)):
+            if orig_dim == 1 and grad_dim > 1:
+                result = np.sum(result, axis=i, keepdims=True)
+
+        return result
+
+
 class Div:
     def __init__(self):
         self.a, self.b = None, None
@@ -193,7 +222,7 @@ class Div:
 
 
 BINARY_OP = Add | Mul | MatMul | Div
-UNARY_OP = Neg | LeakyReLU | Exp | Max | Sum
+UNARY_OP = Neg | LeakyReLU | Exp | Max | Sum | Broadcast
 
 
 class Tensor:
@@ -243,6 +272,9 @@ class Tensor:
 
     def div(self, other: "Tensor"):
         return Div().forward(self, other)
+
+    def broadcast_to(self, target_shape):
+        return Broadcast(target_shape).forward(self)
 
     def backward(self):
         if not self.requires_grad:
@@ -540,3 +572,29 @@ def test_div_backward():
 
     assert np.allclose(a.grad, a_torch.grad.numpy())
     assert np.allclose(b.grad, b_torch.grad.numpy())
+
+
+def test_broadcast_forward():
+    a = Tensor([1.0, 2.0])
+    result1 = a.broadcast_to((3, 2))
+    assert result1.data.shape == (3, 2)
+    assert np.allclose(result1.data, np.broadcast_to(a.data, (3, 2)))
+
+    b = Tensor([0.5])
+    result2 = b.broadcast_to((2, 3))
+    assert result2.data.shape == (2, 3)
+    assert np.allclose(result2.data, np.full((2, 3), 0.5))
+
+
+def test_broadcast_backward():
+    a = Tensor([1.0, 2.0], requires_grad=True)
+    broadcasted = a.broadcast_to((3, 2))
+    broadcasted.sum().backward()
+    expected_grad = np.array([3.0, 3.0])
+    assert np.allclose(a.grad, expected_grad)
+
+    b = Tensor([0.5], requires_grad=True)
+    broadcasted2 = b.broadcast_to((2, 3))
+    broadcasted2.sum().backward()
+    expected_grad2 = np.array([6.0])
+    assert np.allclose(b.grad, expected_grad2)

@@ -16,7 +16,10 @@ class Linear:
     def forward(self, x: Tensor) -> Tensor:
         output = x @ self.weights
         if self.bias_tensor is not None:
-            output = output + self.bias_tensor
+            batch_size = x.data.shape[0]
+            target_shape = (batch_size, self.output_dim)
+            bias_broadcast = self.bias_tensor.broadcast_to(target_shape)
+            output = output + bias_broadcast
         return output
 
     def parameters(self) -> list[Tensor]:
@@ -40,7 +43,7 @@ def test_linear_layer_gradients():
     layer.bias_tensor.data = np.array([0.5])
     x = Tensor([[3.0, 4.0]], requires_grad=True)
     output = layer.forward(x)
-    expected_output = np.array([[3.0 * 1.0 + 4.0 * 2.0 + 0.5]])  # [11.5]
+    expected_output = np.array([[3.0 * 1.0 + 4.0 * 2.0 + 0.5]])
     assert np.allclose(output.data, expected_output)
     output.backward()
     expected_weight_grad = np.array([[3.0], [4.0]])
