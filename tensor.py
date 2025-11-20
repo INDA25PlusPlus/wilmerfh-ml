@@ -77,6 +77,31 @@ class LeakyReLU:
         return grad * mask
 
 
+class LogSoftmax:
+    def __init__(self, axis=-1):
+        self.a = None
+        self.axis = axis
+        self.softmax_output = None
+
+    def forward(self, a: "Tensor") -> "Tensor":
+        self.a = a
+        max_val = np.max(a.data, axis=self.axis, keepdims=True)
+        exp_data = np.exp(a.data - max_val)
+        sum_exp_data = np.sum(exp_data, axis=self.axis, keepdims=True)
+        self.softmax_output = exp_data / sum_exp_data
+        log_softmax_data = a.data - max_val - np.log(sum_exp_data)
+
+        ret = Tensor(log_softmax_data, requires_grad=a.requires_grad)
+        if a.requires_grad:
+            ret.src = self
+        return ret
+
+    def backward(self, grad: np.ndarray) -> np.ndarray:
+        assert self.a is not None and self.softmax_output is not None
+        sum_grad = np.sum(grad, axis=self.axis, keepdims=True)
+        return grad - sum_grad * self.softmax_output
+
+
 class MatMul:
     def __init__(self):
         self.a, self.b = None, None
@@ -192,7 +217,9 @@ class Broadcast:
         for _ in range(ndim_diff):
             result = np.sum(result, axis=0)
 
-        for i, (orig_dim, grad_dim) in enumerate(zip(self.original_shape, result.shape)):
+        for i, (orig_dim, grad_dim) in enumerate(
+            zip(self.original_shape, result.shape)
+        ):
             if orig_dim == 1 and grad_dim > 1:
                 result = np.sum(result, axis=i, keepdims=True)
 
@@ -221,8 +248,44 @@ class Div:
         return grad_a, grad_b
 
 
+class Power:
+    def __init__(self):
+        self.a = None
+        self.exponent = None
+
+    def forward(self, a: "Tensor", exponent: float) -> "Tensor":
+        self.a = a
+        self.exponent = exponent
+        data = a.data**exponent
+        ret = Tensor(data, requires_grad=a.requires_grad)
+        if a.requires_grad:
+            ret.src = self
+        return ret
+
+    def backward(self, grad: np.ndarray) -> np.ndarray:
+        assert self.a is not None
+        return grad * self.exponent * (self.a.data ** (self.exponent - 1))
+
+
+class Log:
+    def __init__(self):
+        self.a = None
+
+    def forward(self, a: "Tensor") -> "Tensor":
+        self.a = a
+        data = np.log(a.data)
+        ret = Tensor(data, requires_grad=a.requires_grad)
+        if a.requires_grad:
+            ret.src = self
+        return ret
+
+    def backward(self, grad: np.ndarray) -> np.ndarray:
+        assert self.a is not None
+        return grad / self.a.data
+
+
 BINARY_OP = Add | Mul | MatMul | Div
-UNARY_OP = Neg | LeakyReLU | Exp | Max | Sum | Broadcast
+UNARY_OP = Neg | LeakyReLU | Exp | Max | Sum | Broadcast | Power | LogSoftmax | Log
 
 
 class Tensor:
@@ -258,8 +321,17 @@ class Tensor:
     def __truediv__(self, other: "Tensor"):
         return Div().forward(self, other)
 
+    def __pow__(self, exponent: float):
+        return Power().forward(self, exponent)
+
     def lrelu(self, negative_slope=0.01):
         return LeakyReLU(negative_slope).forward(self)
+
+    def log_softmax(self, axis=-1):
+        return LogSoftmax(axis).forward(self)
+
+    def log(self):
+        return Log().forward(self)
 
     def exp(self):
         return Exp().forward(self)
@@ -370,7 +442,7 @@ def test_leaky_relu_backward():
     expected = torch.nn.functional.leaky_relu(a_torch, negative_slope=0.01)
     expected.sum().backward()
 
-    assert np.allclose(a.grad, a_torch.grad.numpy(), atol=1e-6)
+    assert np.allclose(a.grad, a_torch.grad.numpy())
 
 
 def test_matrix_multiplication_forward():
@@ -414,9 +486,9 @@ def test_complex_computation():
     result.sum().backward()
     result_torch.sum().backward()
 
-    assert np.allclose(a.grad, a_torch.grad.numpy(), atol=1e-6)
-    assert np.allclose(b.grad, b_torch.grad.numpy(), atol=1e-6)
-    assert np.allclose(c.grad, c_torch.grad.numpy(), atol=1e-6)
+    assert np.allclose(a.grad, a_torch.grad.numpy())
+    assert np.allclose(b.grad, b_torch.grad.numpy())
+    assert np.allclose(c.grad, c_torch.grad.numpy())
 
 
 def test_chained_ops():
@@ -598,3 +670,41 @@ def test_broadcast_backward():
     broadcasted2.sum().backward()
     expected_grad2 = np.array([6.0])
     assert np.allclose(b.grad, expected_grad2)
+
+
+def test_power_forward():
+    a = Tensor([[1.0, 2.0], [3.0, 4.0]])
+    result = a**2.0
+    a_torch = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    expected = a_torch**2.0
+    assert np.allclose(result.data, expected.numpy())
+
+
+def test_power_backward():
+    a = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+    result = a**2.0
+    result.sum().backward()
+    a_torch = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+    expected = a_torch**2.0
+    expected.sum().backward()
+    assert np.allclose(a.grad, a_torch.grad.numpy())
+
+
+def test_log_forward():
+    a = Tensor([1.0, np.e, np.e**2])
+    result = a.log()
+    a_torch = torch.tensor([1.0, np.e, np.e**2])
+    expected = torch.log(a_torch)
+    assert np.allclose(result.data, expected.numpy())
+
+
+def test_log_backward():
+    a = Tensor([1.0, np.e, np.e**2], requires_grad=True)
+    result = a.log()
+    result.sum().backward()
+
+    a_torch = torch.tensor([1.0, np.e, np.e**2], requires_grad=True)
+    expected = torch.log(a_torch)
+    expected.sum().backward()
+
+    assert np.allclose(a.grad, a_torch.grad.numpy())
