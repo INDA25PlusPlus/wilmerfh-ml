@@ -39,3 +39,17 @@ class MLP:
             params.extend(layer.parameters())
         params.extend(self.output_layer.parameters())
         return params
+
+    def state_dict(self) -> dict:
+        state = {
+            "input_layer": self.input_layer.state_dict(),
+            "hidden_layers": [layer.state_dict() for layer in self.hidden_layers],
+            "output_layer": self.output_layer.state_dict(),
+        }
+        return state
+
+    def load_state_dict(self, state_dict: dict):
+        self.input_layer.load_state_dict(state_dict["input_layer"])
+        for i, layer_state in enumerate(state_dict["hidden_layers"]):
+            self.hidden_layers[i].load_state_dict(layer_state)
+        self.output_layer.load_state_dict(state_dict["output_layer"])

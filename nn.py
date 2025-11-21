@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 
 from tensor import Tensor
@@ -27,6 +29,19 @@ class Linear:
         if self.bias_tensor is not None:
             params.append(self.bias_tensor)
         return params
+
+    def state_dict(self) -> dict[str, Tensor]:
+        state = {"weights": copy.deepcopy(self.weights)}
+        if self.bias_tensor is not None:
+            state["bias"] = copy.deepcopy(self.bias_tensor)
+        return state
+
+    def load_state_dict(self, state_dict: dict[str, Tensor]):
+        self.weights = copy.deepcopy(state_dict["weights"])
+        if "bias" in state_dict:
+            self.bias_tensor = copy.deepcopy(state_dict["bias"])
+        else:
+            self.bias_tensor = None
 
 
 def test_linear_layer_forward():
