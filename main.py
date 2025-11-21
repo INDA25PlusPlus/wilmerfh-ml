@@ -13,11 +13,16 @@ def main():
     output_dim = 10
     num_hidden_layers = 1
     learning_rate = 0.01
-    epochs = 5
+    epochs = 30
+    batch_size = 32
 
     print("Loading MNIST data...")
-    train_data = load_mnist("data", train=True, normalize=True, one_hot=True)
-    test_data = load_mnist("data", train=False, normalize=True, one_hot=True)
+    train_data = load_mnist(
+        "data", train=True, normalize=True, one_hot=True, batch_size=batch_size
+    )
+    test_data = load_mnist(
+        "data", train=False, normalize=True, one_hot=True, batch_size=1
+    )
     print("MNIST data loaded.")
 
     model = MLP(
@@ -33,9 +38,11 @@ def main():
     print(f"Optimizer: {optimizer.__class__.__name__}")
     print(f"Learning Rate: {learning_rate}")
     print(f"Epochs: {epochs}")
+    print(f"Batch Size: {batch_size}")
 
     print("\nStarting training...")
-    num_train_samples = len(train_data)
+    num_train_batches = len(train_data)
+    num_test_samples = len(test_data)
 
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -51,19 +58,17 @@ def main():
             optimizer.step()
 
         print(
-            f"Epoch {epoch + 1}/{epochs} finished, Average Loss: {epoch_loss / num_train_samples:.4f}"
+            f"Epoch {epoch + 1}/{epochs} finished, Average Loss: {epoch_loss / num_train_batches:.4f}"
         )
     print("Training finished.")
 
     print("\nStarting evaluation...")
     correct_predictions = 0
-    num_test_samples = len(test_data)
     for image, label in test_data:
         predictions = model.forward(image)
         predicted_label = np.argmax(predictions.data, axis=1)
         true_label = np.argmax(label.data, axis=1)
-        if predicted_label == true_label:
-            correct_predictions += 1
+        correct_predictions += np.sum(predicted_label == true_label)
 
     accuracy = correct_predictions / num_test_samples
     print(f"Test Accuracy: {accuracy:.4f}")

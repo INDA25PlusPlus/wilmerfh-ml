@@ -10,6 +10,7 @@ def load_mnist(
     train: bool = True,
     normalize: bool = True,
     one_hot: bool = False,
+    batch_size: int = 1,
 ) -> list[tuple[Tensor, Tensor]]:
     """
     Load MNIST dataset from local files.
@@ -19,11 +20,12 @@ def load_mnist(
         train: If True, load training data; otherwise load test data
         normalize: If True, normalize pixel values to [0, 1]
         one_hot: If True, return one-hot encoded labels
+        batch_size: The number of samples per batch.
 
     Returns:
         List of (image, label) tuples, where each is a Tensor.
-        Image Tensor shape: (1, 784)
-        Label Tensor shape: (1,) or (1, 10) if one_hot=True
+        Image Tensor shape: (batch_size, 784)
+        Label Tensor shape: (batch_size,) or (batch_size, 10) if one_hot=True
     """
     mndata = MNIST(path)
     if train:
@@ -40,25 +42,29 @@ def load_mnist(
         num_classes = labels_np.max() + 1
         labels_np = np.eye(num_classes)[labels_np]
 
+    num_samples = images_np.shape[0]
+    num_batches = (num_samples + batch_size - 1) // batch_size
     data = []
-    for i in range(images_np.shape[0]):
-        image_tensor = Tensor(images_np[i : i + 1], requires_grad=False)
-        label_tensor = Tensor(labels_np[i : i + 1], requires_grad=False)
-        data.append((image_tensor, label_tensor))
+    for i in range(num_batches):
+        start = i * batch_size
+        end = start + batch_size
+        image_batch = Tensor(images_np[start:end], requires_grad=False)
+        label_batch = Tensor(labels_np[start:end], requires_grad=False)
+        data.append((image_batch, label_batch))
 
     return data
 
 
 if __name__ == "__main__":
-    data = load_mnist("data", train=True, normalize=True)
-    num_images = 15
+    data = load_mnist("data", train=True, normalize=True, batch_size=15)
+    images_batch, labels_batch = data[0]
+    num_images = images_batch.shape[0]
     rows, cols = 3, 5
     fig, axes = plt.subplots(rows, cols, figsize=(10, 6))
     axes = axes.flatten()
     for i in range(num_images):
-        image_tensor, label_tensor = data[i]
-        img = image_tensor.data.reshape(28, 28)
-        label = label_tensor.data
+        img = images_batch.data[i].reshape(28, 28)
+        label = labels_batch.data[i]
         axes[i].imshow(img, cmap="gray")
         axes[i].set_title(f"Label: {label}")
         axes[i].axis("off")
