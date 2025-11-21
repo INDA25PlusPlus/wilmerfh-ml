@@ -58,7 +58,7 @@ def load_mnist(
 if __name__ == "__main__":
     data = load_mnist("data", train=True, normalize=True, batch_size=15)
     images_batch, labels_batch = data[0]
-    num_images = images_batch.shape[0]
+    num_images = images_batch.data.shape[0]
     rows, cols = 3, 5
     fig, axes = plt.subplots(rows, cols, figsize=(10, 6))
     axes = axes.flatten()
